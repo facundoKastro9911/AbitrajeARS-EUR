@@ -1,0 +1,13 @@
+{
+  "name": "p2p-eur-proxy",
+  "version": "1.0.0",
+  "description": "Proxy simple para Binance P2P EUR (venta directa)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "express": "^4.19.2"
+  }
+}
