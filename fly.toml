@@ -1,14 +1,22 @@
-app = "binance-p2p-eur-proxy-fra"   # cambialo si ese nombre ya existe
-primary_region = "fra"
+# fly.toml app configuration file generated for p2p-eur-proxy-facundo on 2025-10-21T23:33:32Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'p2p-eur-proxy-facundo'
+primary_region = 'fra'
+
+[build]
 
 [http_service]
-internal_port = 3000
-force_https = true
-auto_start_machines = true
-auto_stop_machines = true
-processes = ["app"]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
 
 [[vm]]
-cpu_kind = "shared"
-cpus = 1
-memory_mb = 512
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512
