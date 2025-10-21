@@ -7,75 +7,93 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Configuración fija (lo que acordamos)
+// ========================================
+// CONFIGURACIÓN PRINCIPAL
+// ========================================
 const ASSETS = ["USDT", "BTC", "ETH", "BNB", "SOL"];
-// Priorizo SEPA INSTANT arriba; igual filtramos por cualquiera de estos 4
-const DESIRED_PAYTYPES = ["SEPA INSTANT", "SEPA", "Wise", "Skrill"];
 
-// Normalizador de nombres de métodos (p. ej. "SEPAInstant" => "SEPA INSTANT")
+// Métodos de pago aceptados y variantes comunes
+const DESIRED_PAYTYPES = [
+  "SEPA INSTANT",
+  "SEPA (EU) INSTANT",
+  "SEPAInstant",
+  "SEPA (EU) bank transfer",
+  "SEPA",
+  "Bank Transfer",
+  "Wise",
+  "WiseTransfer",
+  "Skrill"
+];
+
+// ========================================
+// FUNCIONES AUXILIARES
+// ========================================
+
+// Normalizador de nombres de métodos de pago
 function normalizePayTypeName(s) {
   if (!s) return "";
-  const raw = String(s).trim().toUpperCase().replace(/[\s_-]+/g, "");
-  if (raw === "SEPAINSTANT") return "SEPA INSTANT";
-  if (raw === "SEPA") return "SEPA";
-  if (raw === "WISE" || raw === "WISETRANSFER") return "Wise";
-  if (raw === "SKRILL") return "Skrill";
-  return s; // devolver tal cual si no coincide
+  const raw = String(s).trim().toUpperCase().replace(/[\s_\-().]+/g, "");
+  if (raw.includes("SEPAINSTANT") || raw.includes("SEPAEUINSTANT")) return "SEPA INSTANT";
+  if (raw.includes("SEPAEUBANKTRANSFER") || raw.includes("BANKTRANSFER") || raw.includes("SEPAEU")) return "SEPA (EU) bank transfer";
+  if (raw.includes("SEPA")) return "SEPA";
+  if (raw.includes("WISE")) return "Wise";
+  if (raw.includes("SKRILL")) return "Skrill";
+  return s;
 }
 
-// extrae lista de paytypes de un anuncio (según estructura que devuelva Binance)
+// Extrae los métodos de pago de cada anuncio
 function extractPayTypes(entry) {
-  // Algunos payloads traen r.payTypes (array de strings)
-  // Otros traen r.adv.tradeMethods = [{ payType: "Wise", ... }]
   const fromFriendly = Array.isArray(entry?.payTypes) ? entry.payTypes : [];
   const fromTradeMethods = Array.isArray(entry?.adv?.tradeMethods)
     ? entry.adv.tradeMethods.map(tm => tm?.payType).filter(Boolean)
     : [];
-
   const merged = [...fromFriendly, ...fromTradeMethods].map(normalizePayTypeName);
-  // Unificar y limpiar
   return Array.from(new Set(merged)).filter(Boolean);
 }
 
-// devuelve el primer método que coincida con nuestras prioridades
+// Devuelve el primer método que coincida con nuestras prioridades
 function pickDesiredPayType(payTypes) {
   for (const desired of DESIRED_PAYTYPES) {
-    // comparar normalizando
     const match = payTypes.find(p => normalizePayTypeName(p).toUpperCase() === normalizePayTypeName(desired).toUpperCase());
     if (match) return normalizePayTypeName(match);
   }
   return null;
 }
 
-// Cache simple para evitar rate limit
+// ========================================
+// CACHE PARA EVITAR RATE LIMIT
+// ========================================
 const cache = {};
 const CACHE_TTL_MS = 8000;
 const getCache = (k) => {
   const it = cache[k];
   if (!it) return null;
-  if (Date.now() - it.ts > CACHE_TTL_MS) { delete cache[k]; return null; }
+  if (Date.now() - it.ts > CACHE_TTL_MS) {
+    delete cache[k];
+    return null;
+  }
   return it.value;
 };
 const setCache = (k, v) => { cache[k] = { ts: Date.now(), value: v }; };
 
-// Llamada robusta al endpoint "friendly" de Binance P2P
+// ========================================
+// FUNCIÓN PRINCIPAL: CONSULTA BINANCE P2P
+// ========================================
 async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
   const url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search";
   const body = {
     page: 1,
-    rows: 40,            // traer suficientes para filtrar
+    rows: 40,
     asset,
     fiat,
-    tradeType,           // BUY = compradores (vos vendés)
+    tradeType, // BUY = compradores (vos vendés)
     publisherType: null
-    // No paso payTypes aquí para no perder anuncios; filtro yo después
   };
   const headers = {
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (compatible; p2p-eur-proxy/1.0)"
+    "User-Agent": "Mozilla/5.0 (compatible; p2p-eur-proxy/1.1)"
   };
 
-  // Reintentos simples por si hay 429/timeout
   let lastErr;
   for (let i = 0; i < 3; i++) {
     try {
@@ -89,14 +107,16 @@ async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
   throw lastErr || new Error("binance_p2p_request_failed");
 }
 
-// calcula la mejor oferta (más cara) para un asset dado, filtrando por métodos deseados
+// ========================================
+// PROCESA EL MEJOR COMPRADOR (precio más alto)
+// ========================================
 async function bestBuyerForAsset(asset) {
   const cacheKey = `best:${asset}`;
   const cached = getCache(cacheKey);
   if (cached) return cached;
 
   const entries = await fetchBinanceP2P(asset, "EUR", "BUY");
-  // Filtrar por paytypes deseados
+
   const filtered = entries
     .map(r => {
       const adv = r?.adv || {};
@@ -116,7 +136,7 @@ async function bestBuyerForAsset(asset) {
     .filter(x =>
       x.asset &&
       typeof x.price === "number" &&
-      x.chosenPay &&                       // debe tener al menos un método válido de nuestra lista
+      x.chosenPay &&
       DESIRED_PAYTYPES.map(normalizePayTypeName).includes(normalizePayTypeName(x.chosenPay))
     );
 
@@ -126,13 +146,12 @@ async function bestBuyerForAsset(asset) {
     return result;
   }
 
-  // Para BUY: queremos el que MÁS paga => ordenar desc por precio
-  filtered.sort((a, b) => b.price - a.price);
+  filtered.sort((a, b) => b.price - a.price); // el que más paga
   const top = filtered[0];
 
   const result = {
     asset: top.asset,
-    price: top.price.toString(),          // devuelvo como string para ser consistente con otros proxies
+    price: top.price.toString(),
     payType: top.chosenPay,
     buyer: top.buyer,
     maxAmount: top.maxAmount !== null ? top.maxAmount.toString() : null
@@ -141,7 +160,9 @@ async function bestBuyerForAsset(asset) {
   return result;
 }
 
-// pequeña ayuda para espaciar requests y evitar rate-limit
+// ========================================
+// ENDPOINT PRINCIPAL
+// ========================================
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 app.get('/p2p-eur', async (_req, res) => {
@@ -151,16 +172,15 @@ app.get('/p2p-eur', async (_req, res) => {
       const asset = ASSETS[i];
       const r = await bestBuyerForAsset(asset);
       results.push(r);
-      if (i < ASSETS.length - 1) await sleep(180); // escalonar un toque
+      if (i < ASSETS.length - 1) await sleep(200); // pausa pequeña entre requests
     }
 
-    // respuesta final
     return res.json({
       ok: true,
       fiat: "EUR",
       tradeType: "BUY",
       payTypes: DESIRED_PAYTYPES,
-      results // array con un objeto por asset (solo el más caro)
+      results
     });
   } catch (err) {
     console.error("p2p-eur error:", err?.message || err);
@@ -168,10 +188,16 @@ app.get('/p2p-eur', async (_req, res) => {
   }
 });
 
+// ========================================
+// ENDPOINT DE ESTADO
+// ========================================
 app.get('/', (_req, res) => {
   res.send('P2P EUR proxy activo. Usa /p2p-eur');
 });
 
+// ========================================
+// INICIO DEL SERVIDOR
+// ========================================
 app.listen(PORT, () => {
-  console.log(`P2P EUR proxy corriendo en puerto ${PORT}`);
+  console.log(`✅ P2P EUR proxy corriendo en puerto ${PORT}`);
 });
