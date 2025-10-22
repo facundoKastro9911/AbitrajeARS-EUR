@@ -11,9 +11,9 @@ const PORT = process.env.PORT || 3000;
 // ========================================
 const ASSETS = ["USDT", "BTC", "ETH", "BNB", "SOL"];
 const DESIRED_PAYTYPES = [
-  "SEPA INSTANT",
-  "SEPA (EU) bank transfer",
-  "Bank Transfer",
+  "SEPAinstant",
+  "SEPA",
+  "BANK",
   "Wise",
   "Skrill"
 ];
@@ -24,9 +24,9 @@ const DESIRED_PAYTYPES = [
 function normalizePayTypeName(s) {
   if (!s) return "";
   const raw = String(s).trim().toUpperCase().replace(/[\s_\-().]+/g, "");
-  if (raw.includes("SEPAINSTANT") || raw.includes("SEPAEUINSTANT")) return "SEPA INSTANT";
-  if (raw.includes("SEPAEUBANKTRANSFER") || raw.includes("BANKTRANSFER")) return "SEPA (EU) bank transfer";
+  if (raw.includes("SEPAINSTANT")) return "SEPAinstant";
   if (raw.includes("SEPA")) return "SEPA";
+  if (raw.includes("BANK")) return "BANK";
   if (raw.includes("WISE")) return "Wise";
   if (raw.includes("SKRILL")) return "Skrill";
   return s;
@@ -58,7 +58,7 @@ async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
   const url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search";
   const body = {
     page: 1,
-    rows: 20,
+    rows: 40,
     asset,
     fiat,
     tradeType,
@@ -66,7 +66,7 @@ async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
   };
   const headers = {
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (compatible; p2p-eur-proxy/1.2)",
+    "User-Agent": "Mozilla/5.0 (compatible; p2p-eur-proxy/1.3)",
   };
 
   const resp = await axios.post(url, body, { headers, timeout: 8000 });
@@ -74,7 +74,7 @@ async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
 }
 
 // ========================================
-// ENDPOINT NORMAL (filtrado)
+// ENDPOINT PRINCIPAL (FILTRADO)
 // ========================================
 app.get("/p2p-eur", async (_req, res) => {
   try {
@@ -111,12 +111,11 @@ app.get("/p2p-eur", async (_req, res) => {
 });
 
 // ========================================
-// ENDPOINT DE DEBUG (sin filtro)
+// ENDPOINT DEBUG (/p2p-eur/raw)
 // ========================================
 app.get("/p2p-eur/raw", async (_req, res) => {
   try {
     const data = await fetchBinanceP2P("USDT", "EUR", "BUY");
-    // devolvemos solo campos útiles para no sobrecargar
     const formatted = data.map((r) => ({
       asset: r?.adv?.asset,
       price: r?.adv?.price,
