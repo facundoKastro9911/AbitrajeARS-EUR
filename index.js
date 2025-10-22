@@ -1,21 +1,29 @@
 const express = require("express");
 const axios = require("axios");
-
 const app = express();
-app.use(express.json());
-
 const PORT = process.env.PORT || 3000;
 
 // ========================================
 // CONFIGURACIÓN
 // ========================================
 const ASSETS = ["USDT", "BTC", "ETH", "BNB", "SOL"];
+
+// ✅ Lista ampliada con TODAS las variantes posibles detectadas en Binance
 const DESIRED_PAYTYPES = [
   "SEPAinstant",
   "SEPA",
   "BANK",
   "Wise",
-  "Skrill"
+  "Skrill",
+  "BBVABank",
+  "BancoSantanderSpain",
+  "CaixaBank",
+  "Bunq",
+  "N26",
+  "UniCreditEU",
+  "DukascopyBank",
+  "Paysera",
+  "ZEN"
 ];
 
 // ========================================
@@ -23,13 +31,12 @@ const DESIRED_PAYTYPES = [
 // ========================================
 function normalizePayTypeName(s) {
   if (!s) return "";
-  const raw = String(s).trim().toUpperCase().replace(/[\s_\-().]+/g, "");
-  if (raw.includes("SEPAINSTANT")) return "SEPAinstant";
-  if (raw.includes("SEPA")) return "SEPA";
-  if (raw.includes("BANK")) return "BANK";
-  if (raw.includes("WISE")) return "Wise";
-  if (raw.includes("SKRILL")) return "Skrill";
-  return s;
+  return String(s).trim().toUpperCase().replace(/[\s_\-().]+/g, "");
+}
+
+function isDesired(payType) {
+  const norm = normalizePayTypeName(payType);
+  return DESIRED_PAYTYPES.some((d) => normalizePayTypeName(d) === norm);
 }
 
 function extractPayTypes(entry) {
@@ -37,36 +44,18 @@ function extractPayTypes(entry) {
   const fromTradeMethods = Array.isArray(entry?.adv?.tradeMethods)
     ? entry.adv.tradeMethods.map((tm) => tm?.payType).filter(Boolean)
     : [];
-  const merged = [...fromFriendly, ...fromTradeMethods].map(normalizePayTypeName);
-  return Array.from(new Set(merged)).filter(Boolean);
-}
-
-function pickDesiredPayType(payTypes) {
-  for (const desired of DESIRED_PAYTYPES) {
-    const match = payTypes.find(
-      (p) => normalizePayTypeName(p).toUpperCase() === normalizePayTypeName(desired).toUpperCase()
-    );
-    if (match) return normalizePayTypeName(match);
-  }
-  return null;
+  return Array.from(new Set([...fromFriendly, ...fromTradeMethods]));
 }
 
 // ========================================
-// FETCH DE BINANCE P2P
+// FETCH DE BINANCE
 // ========================================
 async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
   const url = "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search";
-  const body = {
-    page: 1,
-    rows: 40,
-    asset,
-    fiat,
-    tradeType,
-    publisherType: null,
-  };
+  const body = { page: 1, rows: 40, asset, fiat, tradeType };
   const headers = {
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (compatible; p2p-eur-proxy/1.3)",
+    "User-Agent": "Mozilla/5.0 (compatible; p2p-eur-proxy/1.4)"
   };
 
   const resp = await axios.post(url, body, { headers, timeout: 8000 });
@@ -74,44 +63,45 @@ async function fetchBinanceP2P(asset, fiat = "EUR", tradeType = "BUY") {
 }
 
 // ========================================
-// ENDPOINT PRINCIPAL (FILTRADO)
+// ENDPOINT PRINCIPAL /p2p-eur
 // ========================================
 app.get("/p2p-eur", async (_req, res) => {
   try {
     const results = [];
+
     for (const asset of ASSETS) {
       const entries = await fetchBinanceP2P(asset, "EUR", "BUY");
-      const filtered = entries
+
+      const offers = entries
         .map((r) => {
           const adv = r?.adv || {};
           const advertiser = r?.advertiser || {};
           const payTypes = extractPayTypes(r);
-          const chosenPay = pickDesiredPayType(payTypes);
+          const matching = payTypes.filter(isDesired);
 
           return {
             asset: adv.asset,
             price: adv.price ? Number(adv.price) : null,
-            buyer: advertiser?.nickName || null,
-            maxAmount: adv.maxSingleTransAmount || null,
+            buyer: advertiser.nickName,
             payTypes,
-            chosenPay,
+            matching,
           };
         })
-        .filter((x) => x.asset && x.price && x.chosenPay);
+        .filter((o) => o.price && o.matching.length > 0);
 
-      filtered.sort((a, b) => b.price - a.price);
-      results.push(filtered[0] || { asset, note: "no_offer_for_desired_methods" });
+      offers.sort((a, b) => b.price - a.price);
+      results.push(offers[0] || { asset, note: "no_offer_for_desired_methods" });
     }
 
-    return res.json({ ok: true, fiat: "EUR", tradeType: "BUY", results });
+    res.json({ ok: true, fiat: "EUR", tradeType: "BUY", results });
   } catch (err) {
-    console.error("p2p-eur error:", err.message);
+    console.error("Error en /p2p-eur:", err.message);
     res.status(502).json({ ok: false, error: err.message });
   }
 });
 
 // ========================================
-// ENDPOINT DEBUG (/p2p-eur/raw)
+// ENDPOINT DEBUG /p2p-eur/raw
 // ========================================
 app.get("/p2p-eur/raw", async (_req, res) => {
   try {
@@ -129,5 +119,10 @@ app.get("/p2p-eur/raw", async (_req, res) => {
 });
 
 // ========================================
-app.get("/", (_req, res) => res.send("P2P EUR proxy activo. Usa /p2p-eur o /p2p-eur/raw"));
-app.listen(PORT, () => console.log(`✅ P2P EUR proxy corriendo en puerto ${PORT}`));
+app.get("/", (_req, res) =>
+  res.send("P2P EUR proxy activo. Usa /p2p-eur o /p2p-eur/raw")
+);
+
+app.listen(PORT, () =>
+  console.log(`✅ Proxy EUR corriendo en puerto ${PORT}`)
+);
