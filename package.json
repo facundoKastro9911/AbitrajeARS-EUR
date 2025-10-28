@@ -1,7 +1,7 @@
 {
   "name": "p2p-eur-proxy",
   "version": "1.0.0",
-  "description": "Proxy P2P Binance EUR completo con Chromium",
+  "description": "Proxy estable P2P EUR para Binance",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "puppeteer": "^22.5.0"
+    "puppeteer": "21.7.0"
   }
 }
