@@ -1,11 +1,13 @@
 import express from "express";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Reintentos automáticos
-async function obtenerDatos(asset = "USDT", fiat = "EUR", intento = 1) {
+async function obtenerDatos(asset = "USDT", fiat = "EUR") {
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -16,26 +18,26 @@ async function obtenerDatos(asset = "USDT", fiat = "EUR", intento = 1) {
         "--disable-gpu",
         "--disable-dev-shm-usage",
         "--single-process",
-        "--no-zygote"
+        "--no-zygote",
       ],
-      timeout: 0,
+      timeout: 0
     });
 
     const page = await browser.newPage();
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+      "AppleWebKit/537.36 (KHTML, like Gecko) " +
+      "Chrome/120.0.0.0 Safari/537.36"
+    );
 
-    console.log(`🔍 Intento ${intento}: cargando página de Binance P2P para ${asset}/${fiat}...`);
+    console.log(`🟢 Cargando Binance P2P (${asset}/${fiat})...`);
     await page.goto(`https://p2p.binance.com/en/trade/${asset}?fiat=${fiat}`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000
+      waitUntil: "networkidle2",
+      timeout: 90000
     });
 
-    // Espera dinámica al frame principal
-    await page.waitForFunction(
-      () => document.readyState === "complete",
-      { timeout: 60000 }
-    );
-    await page.waitForSelector(".css-1m1f8hn, .css-1ap5wc6", { timeout: 60000 });
-    await page.waitForTimeout(5000); // margen extra
+    await page.waitForSelector(".css-1m1f8hn, .css-1ap5wc6", { timeout: 90000 });
+    await page.waitForTimeout(6000);
 
     const data = await page.evaluate(() => {
       const anuncios = Array.from(document.querySelectorAll(".css-1m1f8hn"));
@@ -48,25 +50,15 @@ async function obtenerDatos(asset = "USDT", fiat = "EUR", intento = 1) {
 
     await browser.close();
     return { ok: true, asset, data };
-
   } catch (error) {
     if (browser) await browser.close();
-
-    // Si falla por "main frame too early", reintentamos
-    if (error.message.includes("main frame too early") && intento < 3) {
-      console.log(`⚠️ Reintentando (${intento + 1})...`);
-      await new Promise(r => setTimeout(r, 4000));
-      return obtenerDatos(asset, fiat, intento + 1);
-    }
-
-    console.error("❌ Error final:", error.message);
+    console.error("❌ Error:", error.message);
     return { ok: false, asset, data: [], error: error.message };
   }
 }
 
-// Rutas
 app.get("/", (_req, res) => {
-  res.send("✅ P2P EUR Proxy activo y estable (con reintentos). Usa /p2p-eur/raw");
+  res.send("✅ P2P EUR Proxy con modo stealth activo. Usa /p2p-eur/raw");
 });
 
 app.get("/p2p-eur/raw", async (_req, res) => {
@@ -75,5 +67,5 @@ app.get("/p2p-eur/raw", async (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor en puerto ${PORT}`);
+  console.log(`🚀 Servidor activo en puerto ${PORT}`);
 });
