@@ -1,7 +1,7 @@
 {
   "name": "p2p-eur-proxy",
   "version": "1.0.0",
-  "description": "Proxy P2P EUR estable en Fly.io",
+  "description": "Proxy P2P EUR estable con modo Stealth",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "express": "^4.19.2",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "puppeteer": "21.7.0"
   }
 }
