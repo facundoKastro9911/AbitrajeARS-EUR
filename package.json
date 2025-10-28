@@ -1,7 +1,7 @@
 {
   "name": "p2p-eur-proxy",
   "version": "1.0.0",
-  "description": "Proxy estable P2P EUR para Binance",
+  "description": "Proxy P2P EUR estable en Fly.io",
   "main": "index.js",
   "type": "module",
   "scripts": {
