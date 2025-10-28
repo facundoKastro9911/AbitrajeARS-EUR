@@ -1,4 +1,3 @@
-// index.js – Proxy P2P EUR liviano y estable
 import express from "express";
 import puppeteer from "puppeteer";
 
@@ -14,47 +13,52 @@ async function obtenerDatos(asset = "USDT", fiat = "EUR") {
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-gpu",
+        "--disable-dev-shm-usage",
         "--single-process",
         "--no-zygote",
-        "--disable-dev-shm-usage",
       ],
+      timeout: 0,
     });
 
     const page = await browser.newPage();
+
+    // ✅ Aumentamos el tiempo antes de ejecutar scripts
     await page.goto(`https://p2p.binance.com/en/trade/${asset}?fiat=${fiat}`, {
-      waitUntil: "networkidle2",
-      timeout: 90000,
+      waitUntil: "domcontentloaded",
+      timeout: 120000,
     });
 
-    await page.waitForTimeout(8000);
+    // ✅ Esperamos explícitamente a que aparezcan los elementos
+    await page.waitForSelector(".css-1m1f8hn, .css-1ap5wc6", { timeout: 60000 });
+    await page.waitForTimeout(5000); // espera extra para asegurar render completo
 
     const data = await page.evaluate(() => {
-      const offers = Array.from(document.querySelectorAll(".css-1m1f8hn"));
-      return offers.slice(0, 5).map((card) => ({
+      const cards = Array.from(document.querySelectorAll(".css-1m1f8hn"));
+      return cards.slice(0, 5).map((card) => ({
         precio: card.querySelector(".css-ovjotx")?.textContent.trim() || "",
         vendedor: card.querySelector(".css-1x1sbwg")?.textContent.trim() || "",
-        pago: Array.from(card.querySelectorAll(".css-1ap5wc6")).map((p) => p.textContent.trim()),
+        pagos: Array.from(card.querySelectorAll(".css-1ap5wc6")).map((p) => p.textContent.trim()),
       }));
     });
 
     await browser.close();
     return { ok: true, asset, data };
-  } catch (err) {
+  } catch (error) {
     if (browser) await browser.close();
-    console.error("❌ Error:", err.message);
-    return { ok: false, asset, data: [], error: err.message };
+    console.error("❌ Error:", error.message);
+    return { ok: false, asset, data: [], error: error.message };
   }
 }
 
-// Endpoint base
 app.get("/", (_req, res) => {
-  res.send("✅ P2P EUR Proxy activo. Usa /p2p-eur/raw");
+  res.send("✅ P2P EUR Proxy activo y estable. Usa /p2p-eur/raw");
 });
 
-// Endpoint principal
 app.get("/p2p-eur/raw", async (_req, res) => {
   const resultado = await obtenerDatos("USDT", "EUR");
   res.json(resultado);
 });
 
-app.listen(PORT, () => console.log(`🚀 Proxy activo en puerto ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor activo en puerto ${PORT}`);
+});
