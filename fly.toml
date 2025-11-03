@@ -2,12 +2,17 @@ app = "p2p-eur-proxy-facundo"
 primary_region = "fra"
 
 [env]
-  NODE_ENV = "production"
+NODE_ENV = "production"
 
 [http_service]
-  internal_port = 8080
-  force_https = true
-  auto_start_machines = true
-  auto_stop_machines = true
-  min_machines_running = 1
-  processes = ["app"]
+internal_port = 8080
+force_https = true
+auto_start_machines = true
+auto_stop_machines = true
+min_machines_running = 1
+processes = ["app"]
+
+[[vm]]
+cpu_kind = "shared"
+cpus = 1
+memory_mb = 1024  # ✅ 1GB para que Puppeteer tenga margen
